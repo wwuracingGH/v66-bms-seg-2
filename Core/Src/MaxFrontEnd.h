@@ -40,7 +40,7 @@
 #define BYTE_COUNT 3
 #define NUM_CELLS 8
 #define NUM_SWITCHES 2
-#define BATTERY_SAMPLES 15 //Number of samples averaged by the ADC for each battery voltage reading
+#define BATTERY_SAMPLES 16 //Number of samples averaged by the ADC for each battery voltage reading
 
 /*****************************************************************************************
  * Public function declarations

@@ -14,12 +14,13 @@
  * Module private variables
  ****************************************************************************************/
 static ADC_HandleTypeDef *tmadc;
-static float cellTemps[2][NUMTHERMISTORS] = {{0},{0}};	// Holds thermistor values in C
+static float cellTemps[NUMTHERMISTORS] = {0};	// Holds thermistor values in C
 
-// Lookup table
+/* Lookup table
 static const int16_t tmCelciusADCVal[22] = { 4026, 3771, 3516, 3261, 3006, 2751, 2568,
-										   	 2394, 2202, 2014, 1848, 1690, 1496, 1345,
-											 1200, 1074, 970,  866,  784,  694,  630, 0 };
+					     2394, 2202, 2014, 1848, 1690, 1496, 1345,
+					     1200, 1074, 970,  866,  784,  694,  630, 0 };
+*/
 static float thermVoltage = 0;
 static float thermResistance = 0;
 static float tempInC = 0;
@@ -50,7 +51,6 @@ void TMInit(ADC_HandleTypeDef *hadc1){
 *   celcius
 *****************************************************************************************/
 void TMSampleTemps() {
-	uint16_t rawtemps[2][NUMTHERMISTORS] = {{0}, {0}};
 	float curtemp = 0;
 
 	// Sample all ADC values and convert to C
@@ -69,48 +69,11 @@ void TMSampleTemps() {
 		curtemp = adcSampleAvg / ADC_SAMPLES;
 		HAL_ADC_Stop(tmadc);
 
-		rawtemps[0][i] = tmConvertToTemp(curtemp);
+		curtemp = tmConvertToTemp(curtemp);
+		cellTemps[i] = curtemp;
 
-		// Left side thermistors
-		ADC_Select_CH6();
-		adcSampleAvg = 0;
-		for (int j = 0; j < ADC_SAMPLES; j++) {
-			HAL_ADC_Start(tmadc);
-			HAL_ADC_PollForConversion(tmadc, TMADCTIMEOUT);
-			adcSampleAvg = adcSampleAvg + HAL_ADC_GetValue(tmadc);
-		}
-		curtemp = adcSampleAvg / ADC_SAMPLES;
-		HAL_ADC_Stop(tmadc);
-
-		rawtemps[1][i] = tmConvertToTemp(curtemp);
 	}
 
-	// Convert from Celcius to Fahrenheit and store
-	for(int i = 0; i < NUMTHERMISTORS; i++) {
-		cellTemps[0][i] = tmConvertCtoF(rawtemps[0][i]);
-		cellTemps[1][i] = tmConvertCtoF(rawtemps[1][i]);
-
-		/* Error checking - Set to 0 if temp sensor becomes unplugged */
-		if (cellTemps[0][i] > 300){
-			cellTemps[0][i] = 0;
-		}
-		if (cellTemps[1][i] > 300){
-			cellTemps[1][i] = 0;
-		}
-	}
-}
-
-/*****************************************************************************************
-* TMGetTemps() - PUBLIC
-*   parameters: Array to fill
-*   return: none
-*   description: Takes pointer to array and fills it with current temp values
-*****************************************************************************************/
-void TMGetTemps(float temparray[2][NUMTHERMISTORS]) {
-	for(int i = 0; i < NUMTHERMISTORS; i++) {
-		temparray[0][i] = cellTemps[0][i];
-		temparray[1][i] = cellTemps[1][i];
-	}
 }
 
 /*****************************************************************************************
@@ -131,33 +94,16 @@ void ADC_Select_CH0(void) {
 }
 
 /*****************************************************************************************
-* ADC_Select_CH6() - PUBLIC
-*   parameters: none
-*   return: none
-*   description: Switches CH6 to active ADC channel
-*****************************************************************************************/
-void ADC_Select_CH6(void) {
-	ADC_ChannelConfTypeDef sConfig = {0};
-	sConfig.Channel = ADC_CHANNEL_6;
-	sConfig.Rank = ADC_REGULAR_RANK_1;
-	sConfig.SamplingTime = ADC_SAMPLINGTIME_COMMON_1;
-	if (HAL_ADC_ConfigChannel(tmadc, &sConfig) != HAL_OK)
-	{
-		Error_Handler();
-	}
-}
-
-/*****************************************************************************************
 * tmSelect() - PRIVATE
 *   parameters: thermistor index
 *   return: none
 *   description: Selects given index on MUX
 *****************************************************************************************/
 void tmSelect(uint8_t index) {
-	HAL_GPIO_WritePin(GPIOA,GPIO_PIN_1,index&0x01);
-	HAL_GPIO_WritePin(GPIOA,GPIO_PIN_2,index&0x02);
-	HAL_GPIO_WritePin(GPIOA,GPIO_PIN_3,index&0x04);
-	HAL_GPIO_WritePin(GPIOA,GPIO_PIN_5,index&0x08);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, index&0x01);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, index&0x02);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, index&0x04);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, index&0x08);
 }
 
 /*****************************************************************************************
@@ -183,19 +129,5 @@ float tmConvertToTemp(float adcVal) {
 	tempInC = logf(thermResistance/18970)/logf(0.9741);
 
 	return tempInC;
-}
-
-/*****************************************************************************************
-* tmConvertCtoF() - PRIVATE
-*   parameters: Temperature in celcius as float
-*   return: (float) Thermistor temperature in F
-*   description: Returns farenheight value of given celcius temperature
-*****************************************************************************************/
-float tmConvertCtoF(float celcius) {
-	if (celcius == 0){
-		return 0;
-	} else {
-		return celcius*1.8 + 32;
-	}
 }
 
