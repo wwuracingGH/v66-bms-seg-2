@@ -26,7 +26,7 @@
 *   description: Stores memory location of ADC peripheral
 *****************************************************************************************/
 
-static float cellTemps[NUMTHERMISTORS];
+extern float cellTemps[NUMTHERMISTORS];
 
 void TMInit(ADC_HandleTypeDef *hadc1);
 

@@ -11,28 +11,14 @@
  *  2023 Brandon Ramirez	-	V64
  *  2023 Chandler Johnston	-	V64
  */
-/* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
-#include "main.h"
 
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
+#include "main.h"
 #include "MaxFrontEnd.h"
 #include "TempMonitor.h"
 #include "DigitalIsoComm.h"
 
-/* USER CODE END Includes */
-
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
 #define SPI2_CS_MODE 0 // 1 = active high CS, 0 = active low CS
 #define BMS_IDENTIFIER 8
-//typedef enum { IDLE, CHARGING, RUNNING, DEMO } BMSSTATES_T; For use at a later point in time
 
 /*
  * SPI data
@@ -43,7 +29,7 @@ uint16_t txBuffer[6];
 /*
  * MAX data
  */
-float cell_voltages[NUM_CELLS] = { 0 };
+float cell_voltages[NUM_CELLS];
 uint8_t balanceEnable = 0;
 uint16_t lowestVoltage;
 uint16_t highestVoltage;
@@ -59,20 +45,10 @@ float sumTemp;
 uint16_t avgTemp;
 uint8_t errCounter;
 
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-ADC_HandleTypeDef hadc1;
-
-SPI_HandleTypeDef hspi1;
-SPI_HandleTypeDef hspi2;
-
-TIM_HandleTypeDef htim14;
+ADC_HandleTypeDef hadc1; 	/* ADC for cells and thermistors */
+SPI_HandleTypeDef hspi1; 	/* SPI for MAX chips */
+SPI_HandleTypeDef hspi2; 	/* SPI for peripheral communication */
+TIM_HandleTypeDef htim14;	/* TODO: I have no clue */
 
 /* USER CODE BEGIN PV */
 
@@ -141,7 +117,6 @@ int main(void)
 
 	    /* Sample & return cell voltages */
 	    MaxSampleCharges();
-	    MAXGetCellVoltages(cell_voltages);
 
 	    cell_voltages[0] = cell_voltages[1];
 
@@ -150,19 +125,20 @@ int main(void)
 	    highestVoltage = 0;
 	    sumVoltage = 0;
 	    for (int i = 0; i < NUM_CELLS; i++) {
-		    if ((uint16_t) 1000 * cell_voltages[i] > highestVoltage)
-		    	highestVoltage = (uint16_t) 1000 * cell_voltages[i];
-            else if ((uint16_t) 1000 * cell_voltages[i] < lowestVoltage)
-			    lowestVoltage = (uint16_t) 1000 * cell_voltages[i];
+		    uint16_t voltInt = (uint16_t)(1000 * cell_voltages[i]);
+		    if (voltInt > highestVoltage)
+		    	highestVoltage = voltInt;
+		    else if (voltInt < lowestVoltage)
+			lowestVoltage = voltInt;
 		    
-            sumVoltage = sumVoltage + cell_voltages[i];
+		    sumVoltage = sumVoltage + cell_voltages[i];
 	    }
-	    avgVoltage = (uint16_t) 1000 * (sumVoltage / NUM_CELLS);
+	    avgVoltage = (uint16_t) (1000 * (sumVoltage / NUM_CELLS));
 
 	    /* Sample & return cell temps */
 	    TMSampleTemps();
 
-	    float h = cellTemps[0];
+	    float* h = cellTemps;
 
 	    /* Calculate lowest, highest, and average cell voltages*/
 	    lowestTemp = 65535; // Set to highest possible uint16_t value
@@ -170,18 +146,21 @@ int main(void)
 	    sumTemp = 0;
 	    errCounter = 0;
 	    for (int i = 0; i < NUMTHERMISTORS; i++) {
-		    if (cellTemps[i] == 0){
+		    if (cellTemps[i] <= 0){
 		        errCounter++;
+		        continue;
 		    }
 
-		    if ((10 * (uint16_t) cellTemps[i] > highestTemp) && (cellTemps[i] != 0)) {
+		    uint16_t tempInt = (uint16_t)(10 * cellTemps[i]);
+
+		    if (tempInt > highestTemp) {
 			    // New highest cell temp found, update value
-			    highestTemp = 10 * (uint16_t) cellTemps[i];
+			    highestTemp = tempInt;
 		    }
 
-		    if ((10 * (uint16_t) cellTemps[i] < lowestTemp) && (cellTemps[i] != 0)) {
+		    if (tempInt < lowestTemp) {
 			    // New lowest cell temp found, update value
-			    lowestTemp = 10 * (uint16_t) cellTemps[i];
+			    lowestTemp = tempInt;
 		    }
 		    sumTemp += cellTemps[i];
 	    }
@@ -194,7 +173,7 @@ int main(void)
 	    // Calculate average, taking into account number of error readings
 	    // If/else statement to prevent !DIV0 errors
 	    if (sumTemp > 0){
-		    avgTemp = 10 * (uint16_t) (sumTemp / ((2*NUMTHERMISTORS) - errCounter));
+		    avgTemp = (uint16_t) (10 * (sumTemp / ((NUMTHERMISTORS) - errCounter)));
 	    } else {
 		    avgTemp = 0;
 	    }
@@ -210,34 +189,7 @@ int main(void)
 
 	    /* Send desired data over SPI */
 	    HAL_SPI_Transmit(&hspi2, (uint8_t*)&txBuffer, 7, HAL_MAX_DELAY);
-
-	  /* All of the code below is for use at a later point in time */
-//	  switch (bmsStates) {
-//	  case IDLE:
-//		  /* Segment is idle & waiting on standby */
-//
-//		  // Do nothing
-//
-//		  break;
-//	  case CHARGING:
-//
-//		  break;
-//	  case RUNNING:
-//		  /* Only monitor voltages and temps for CAN Bus */
-//
-//		  break;
-//	  case DEMO:
-//		  MaxDischargeTest();
-//
-//		  break;
-//	  default:
-//		  break;
-//	  }
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-    } //While(1)
-  /* USER CODE END 3 */
+    }
 }
 
 /**

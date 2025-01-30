@@ -14,7 +14,7 @@
  * Module private variables
  ****************************************************************************************/
 static ADC_HandleTypeDef *tmadc;
-static float cellTemps[NUMTHERMISTORS] = {0};	// Holds thermistor values in C
+float cellTemps[NUMTHERMISTORS] = {0};	// Holds thermistor values in C
 
 /* Lookup table
 static const int16_t tmCelciusADCVal[22] = { 4026, 3771, 3516, 3261, 3006, 2751, 2568,
