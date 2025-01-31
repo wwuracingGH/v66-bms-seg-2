@@ -17,8 +17,13 @@
 #include "TempMonitor.h"
 #include "DigitalIsoComm.h"
 
+/* TODO: get rid of this */
 #define SPI2_CS_MODE 0 // 1 = active high CS, 0 = active low CS
 #define BMS_IDENTIFIER 8
+
+/* If cell temps are outside this range they are discarded */
+#define HIGHEST_CT 100.0f
+#define LOWEST_CT  0.0f
 
 /*
  * SPI data
@@ -50,10 +55,6 @@ SPI_HandleTypeDef hspi1; 	/* SPI for MAX chips */
 SPI_HandleTypeDef hspi2; 	/* SPI for peripheral communication */
 TIM_HandleTypeDef htim14;	/* TODO: I have no clue */
 
-/* USER CODE BEGIN PV */
-
-//BMSSTATES_T bmsStates = IDLE; For use at a later point in time
-
 volatile uint8_t spi_xmit_flag = 0; // Flag used for spi ISR
 volatile uint8_t spi_recv_flag = 0; // Flag used for spi ISR
 
@@ -80,48 +81,30 @@ static void MX_SPI2_Init(void);
   */
 int main(void)
 {
-    /* USER CODE BEGIN 1 */
-    /* USER CODE END 1 */
-
-    /* MCU Configuration--------------------------------------------------------*/
-
-    /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
     HAL_Init();
-
-    /* USER CODE BEGIN Init */
-    /* USER CODE END Init */
-
-    /* Configure the system clock */
     SystemClock_Config();
 
-    /* USER CODE BEGIN SysInit */
-    /* USER CODE END SysInit */
-
-    /* Initialize all configured peripherals */
     MX_GPIO_Init();
     MX_ADC1_Init();
     MX_TIM14_Init();
     MX_SPI1_Init();
     MX_SPI2_Init();
-    /* USER CODE BEGIN 2 */
-    HAL_ADCEx_Calibration_Start(&hadc1);	// Calibrate ADC
-    MaxInit(&hspi1,&hadc1,&htim14);		// Pass peripheral pointers to MAX module and init
-    TMInit(&hadc1);						// Pass ADC to temperature monitor and init
-    DigInit(&hspi2);						// Pass digital isolator SPI pointer and init
-    HAL_TIM_Base_Start(&htim14);			// Start hardware timer
-    /* USER CODE END 2 */
 
-    /* Infinite loop */
-    /* USER CODE BEGIN WHILE */
+
+    HAL_ADCEx_Calibration_Start(&hadc1);	/* Calibrate ADC */
+    MaxInit(&hspi1,&hadc1,&htim14);		/* Pass peripheral pointers to MAX module and init */
+    TMInit(&hadc1);				/* Pass ADC to temperature monitor and init */
+    DigInit(&hspi2);				/* Pass digital isolator SPI pointer and init */
+    HAL_TIM_Base_Start(&htim14);		/* Start hardware timer */
+
     while(1) {
 
 	    /* Sample & return cell voltages */
 	    MaxSampleCharges();
-
-	    cell_voltages[0] = cell_voltages[1];
+	    MAXGetCellVoltages(cell_voltages);
 
 	    /* Calculate lowest, highest, and average cell voltages*/
-	    lowestVoltage = 65535; // Set to highest possible uint16_t value
+	    lowestVoltage = 65535;
 	    highestVoltage = 0;
 	    sumVoltage = 0;
 	    for (int i = 0; i < NUM_CELLS; i++) {
@@ -131,52 +114,43 @@ int main(void)
 		    else if (voltInt < lowestVoltage)
 			lowestVoltage = voltInt;
 		    
-		    sumVoltage = sumVoltage + cell_voltages[i];
+		    sumVoltage += cell_voltages[i];
 	    }
 	    avgVoltage = (uint16_t) (1000 * (sumVoltage / NUM_CELLS));
 
-	    /* Sample & return cell temps */
+
 	    TMSampleTemps();
 
-	    float* h = cellTemps;
-
-	    /* Calculate lowest, highest, and average cell voltages*/
-	    lowestTemp = 65535; // Set to highest possible uint16_t value
+	    lowestTemp = 65535;
 	    highestTemp = 0;
 	    sumTemp = 0;
 	    errCounter = 0;
 	    for (int i = 0; i < NUMTHERMISTORS; i++) {
-		    if (cellTemps[i] <= 0){
+		    if (cellTemps[i] <= LOWEST_CT || cellTemps[i] > HIGHEST_CT){
 		        errCounter++;
 		        continue;
 		    }
 
 		    uint16_t tempInt = (uint16_t)(10 * cellTemps[i]);
 
-		    if (tempInt > highestTemp) {
-			    // New highest cell temp found, update value
+		    if (tempInt > highestTemp)
 			    highestTemp = tempInt;
-		    }
-
-		    if (tempInt < lowestTemp) {
-			    // New lowest cell temp found, update value
+		    else if (tempInt < lowestTemp)
 			    lowestTemp = tempInt;
-		    }
+
 		    sumTemp += cellTemps[i];
 	    }
 
-	    // If we don't have any readings that set this value, change it to zero to prevent over-reads
-	    if (lowestTemp == 65535){
+	    /* TODO: figure out how to get rid of both of these */
+	    /* If we don't have any readings that set this value, change it to zero to prevent over-reads */
+	    if (lowestTemp == 65535)
 		    lowestTemp = 0;
-	    }
 
-	    // Calculate average, taking into account number of error readings
-	    // If/else statement to prevent !DIV0 errors
-	    if (sumTemp > 0){
+	    /* TODO: sum temp should always be more than 0 */
+	    if (sumTemp > 0)
 		    avgTemp = (uint16_t) (10 * (sumTemp / ((NUMTHERMISTORS) - errCounter)));
-	    } else {
+	    else
 		    avgTemp = 0;
-	    }
 
 
 	    txBuffer [0] = BMS_IDENTIFIER;
@@ -188,7 +162,7 @@ int main(void)
 	    txBuffer [6] = lowestTemp;
 
 	    /* Send desired data over SPI */
-	    HAL_SPI_Transmit(&hspi2, (uint8_t*)&txBuffer, 7, HAL_MAX_DELAY);
+	    //HAL_SPI_Transmit(&hspi2, (uint8_t*)&txBuffer, 7, HAL_MAX_DELAY);
     }
 }
 

@@ -38,8 +38,8 @@
  * Application specific
  */
 #define BYTE_COUNT 3
-#define NUM_CELLS 8
-#define NUM_SWITCHES 2
+#define NUM_CELLS 11
+#define NUM_SWITCHES 2 /* TODO: change how cell balancing works */
 #define BATTERY_SAMPLES 15 //Number of samples averaged by the ADC for each battery voltage reading
 
 /*****************************************************************************************

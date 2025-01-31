@@ -167,19 +167,19 @@ void MaxSampleCharges(void) {
 			//read voltage of cell i from ADC
 			HAL_ADC_Start(maxadc);
 			HAL_ADC_PollForConversion(maxadc, HAL_MAX_DELAY); //HAL_MAX_DELAY replaces ADC_TIMEOUT
-			sample_voltages_avg = sample_voltages_avg + HAL_ADC_GetValue(maxadc);
+			sample_voltages_avg += HAL_ADC_GetValue(maxadc);
 		}
 		sample_voltages[i] = sample_voltages_avg / BATTERY_SAMPLES;
 
 	}
-		// Stop ADC
-		HAL_ADC_Stop(maxadc);
+	// Stop ADC
+	HAL_ADC_Stop(maxadc);
 
-		//end hold phase
-		*config &= ~SMPLB_HIGH;
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
-		HAL_SPI_TransmitReceive(maxspi, maxTxBuffer, maxRxBuffer, BYTE_COUNT, SPI_TIMEOUT);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
+	//end hold phase
+	*config &= ~SMPLB_HIGH;
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+	HAL_SPI_TransmitReceive(maxspi, maxTxBuffer, maxRxBuffer, BYTE_COUNT, SPI_TIMEOUT);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
 }
 
 /*****************************************************************************************
@@ -217,6 +217,14 @@ uint8_t selectCell(uint8_t cellNum) {
 	uint8_t bit2 = ((cellNum<<1) &0x04);
 	uint8_t bit3 = ((cellNum<<3) &0x08);
 	uint8_t selection = bit3|bit2|bit1|bit0;
+
+	/*
+	 * 7 = 0b0111
+	 * bit0 = 0b0000
+	 * bit1 = 0b0010
+	 * bit2 = 0b0100
+	 * bit3 = 0b1000
+	 * */
 	return selection<<3;
 }
 
