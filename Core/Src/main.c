@@ -2,63 +2,64 @@
 /**
  * Segment controller to handle states and functionality of the BMS segment boards.
  *
- * Controller continuously cycles through actions based on state.
- * Bluetooth triggers an interrupt and controller only services Tx during this time
+ * Controller continuously cycles through actions based on state. in theory
  * Since no preemptive kernel is used, it is recommended to hold copies of data in main and
  * make sure copies are updated as fast as possible. Modules may be sampling data when interrupt occurs
  *
  *  2022 Peter Schinske 	-	V63
  *  2023 Brandon Ramirez	-	V64
  *  2023 Chandler Johnston	-	V64
+ *  2024 Melana Evans		-	V66
+ *  2024/5 Nicole Swierstra     -       V66/V67 :)
  */
 
 #include "main.h"
 #include "MaxFrontEnd.h"
 #include "TempMonitor.h"
-#include "DigitalIsoComm.h"
 
-/* TODO: get rid of this */
-#define SPI2_CS_MODE 0 // 1 = active high CS, 0 = active low CS
-#define BMS_IDENTIFIER 8
+#define CELL_BALANCING 0
+
+/* TODO: this can be removed i am 200% sure */
+#define BOARD_ID 0
 
 /* If cell temps are outside this range they are discarded */
-#define HIGHEST_CT 100.0f
+#define HIGHEST_CT 102.4f
 #define LOWEST_CT  0.0f
+
+#define MODE_NORMAL 	0
+#define MODE_CHARGING 	1
 
 /*
  * SPI data
  */
-/* Buffer used for transmission */
-uint16_t txBuffer[6];
+struct _SPI_Message {
+	uint8_t boardID;
+	uint16_t highestVoltage;
+	uint16_t avgVoltage;
+	uint16_t lowestVoltage;
+	uint16_t highestTemp;
+	uint16_t avgTemp;
+	uint16_t lowestTemp;
+} SPI_Message = {BOARD_ID, 0,0,0,0,0,0};
+
+struct _SPI_Control {
+	uint8_t mode;
+	uint16_t lowestVoltage;
+	uint8_t _RESERVED[sizeof(SPI_Message) - 3];
+} SPI_Control = {0, 0, {0}};
 
 /*
- * MAX data
+ * Processing vars
  */
 float cell_voltages[NUM_CELLS];
-uint8_t balanceEnable = 0;
-uint16_t lowestVoltage;
-uint16_t highestVoltage;
 float sumVoltage;
-uint16_t avgVoltage;
-
-/*
- * Temp data
- */
-uint16_t lowestTemp;
-uint16_t highestTemp;
 float sumTemp;
-uint16_t avgTemp;
 uint8_t errCounter;
 
 ADC_HandleTypeDef hadc1; 	/* ADC for cells and thermistors */
 SPI_HandleTypeDef hspi1; 	/* SPI for MAX chips */
 SPI_HandleTypeDef hspi2; 	/* SPI for peripheral communication */
-TIM_HandleTypeDef htim14;	/* TODO: I have no clue */
-
-volatile uint8_t spi_xmit_flag = 0; // Flag used for spi ISR
-volatile uint8_t spi_recv_flag = 0; // Flag used for spi ISR
-
-/* USER CODE END PV */
+TIM_HandleTypeDef htim14;	/* Used for the world's silliest delay function */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -67,13 +68,11 @@ static void MX_ADC1_Init(void);
 static void MX_TIM14_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_SPI2_Init(void);
-/* USER CODE BEGIN PFP */
+void Error_Handler(void);
 
-/* USER CODE END PFP */
+void readData();
+void communicateSPI();
 
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-/* USER CODE END 0 */
 
 /**
   * @brief  The application entry point.
@@ -81,89 +80,93 @@ static void MX_SPI2_Init(void);
   */
 int main(void)
 {
-    HAL_Init();
-    SystemClock_Config();
+	HAL_Init();
+	SystemClock_Config();
 
-    MX_GPIO_Init();
-    MX_ADC1_Init();
-    MX_TIM14_Init();
-    MX_SPI1_Init();
-    MX_SPI2_Init();
+	MX_GPIO_Init();
+	MX_ADC1_Init();
+	MX_TIM14_Init();
+	MX_SPI1_Init();
+	MX_SPI2_Init();
 
 
-    HAL_ADCEx_Calibration_Start(&hadc1);	/* Calibrate ADC */
-    MaxInit(&hspi1,&hadc1,&htim14);		/* Pass peripheral pointers to MAX module and init */
-    TMInit(&hadc1);				/* Pass ADC to temperature monitor and init */
-    DigInit(&hspi2);				/* Pass digital isolator SPI pointer and init */
-    HAL_TIM_Base_Start(&htim14);		/* Start hardware timer */
+	HAL_ADCEx_Calibration_Start(&hadc1);	/* Calibrate ADC */
+	MaxInit(&hspi1,&hadc1,&htim14);		/* Pass peripheral pointers to MAX module and init */
+	TMInit(&hadc1);				/* Pass ADC to temperature monitor and init */
+	HAL_TIM_Base_Start(&htim14);		/* Start hardware timer */
 
-    while(1) {
+	while(1) {
+		readData();
+		switch(SPI_Control.mode){
+			case MODE_CHARGING:
+#if CELL_BALANCING == 1
+				MaxDischargeToVoltage(SPI_Control.lowestVoltage);
+#endif
+			break;
 
-	    /* Sample & return cell voltages */
-	    MaxSampleCharges();
-	    MAXGetCellVoltages(cell_voltages);
+			case MODE_NORMAL:
+				MaxStopDischarging(); /*I don't care enough to do this just once*/
+			break;
+		}
 
-	    /* Calculate lowest, highest, and average cell voltages*/
-	    lowestVoltage = 65535;
-	    highestVoltage = 0;
-	    sumVoltage = 0;
-	    for (int i = 0; i < NUM_CELLS; i++) {
-		    uint16_t voltInt = (uint16_t)(1000 * cell_voltages[i]);
-		    if (voltInt > highestVoltage)
-		    	highestVoltage = voltInt;
-		    else if (voltInt < lowestVoltage)
-			lowestVoltage = voltInt;
+		HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&SPI_Message, (uint8_t *)&SPI_Control, sizeof(SPI_Message), 64);
+	}
+}
+
+void readData(){
+	/* Sample & return cell voltages */
+	MaxSampleCharges();
+	MAXGetCellVoltages(cell_voltages);
+
+	/* Calculate lowest, highest, and average cell voltages*/
+	SPI_Message.lowestVoltage = 65535;
+	SPI_Message.highestVoltage = 0;
+	sumVoltage = 0;
+	for (int i = 0; i < NUM_CELLS; i++) {
+		uint16_t voltInt = (uint16_t)(1000 * cell_voltages[i]);
+		if (voltInt > SPI_Message.highestVoltage)
+			SPI_Message.highestVoltage = voltInt;
+		else if (voltInt < SPI_Message.lowestVoltage)
+			SPI_Message.lowestVoltage = voltInt;
 		    
-		    sumVoltage += cell_voltages[i];
-	    }
-	    avgVoltage = (uint16_t) (1000 * (sumVoltage / NUM_CELLS));
+		sumVoltage += cell_voltages[i];
+	}
+	SPI_Message.avgVoltage = (uint16_t) (1000 * (sumVoltage / NUM_CELLS));
 
 
-	    TMSampleTemps();
+	TMSampleTemps();
 
-	    lowestTemp = 65535;
-	    highestTemp = 0;
-	    sumTemp = 0;
-	    errCounter = 0;
-	    for (int i = 0; i < NUMTHERMISTORS; i++) {
-		    if (cellTemps[i] <= LOWEST_CT || cellTemps[i] > HIGHEST_CT){
-		        errCounter++;
+	SPI_Message.lowestTemp = 65535;
+	SPI_Message.highestTemp = 0;
+	sumTemp = 0;
+	errCounter = 0;
+	for (int i = 0; i < NUMTHERMISTORS; i++) {
+		if (cellTemps[i] <= LOWEST_CT || cellTemps[i] > HIGHEST_CT){
+			errCounter++;
 		        continue;
-		    }
+		}
 
-		    uint16_t tempInt = (uint16_t)(10 * cellTemps[i]);
+		uint16_t tempInt = (uint16_t)(10 * cellTemps[i]);
 
-		    if (tempInt > highestTemp)
-			    highestTemp = tempInt;
-		    else if (tempInt < lowestTemp)
-			    lowestTemp = tempInt;
+		if (tempInt > SPI_Message.highestTemp)
+			SPI_Message.highestTemp = tempInt;
+		else if (tempInt < SPI_Message.lowestTemp)
+			SPI_Message.lowestTemp = tempInt;
 
-		    sumTemp += cellTemps[i];
-	    }
+		sumTemp += cellTemps[i];
+	}
 
-	    /* TODO: figure out how to get rid of both of these */
-	    /* If we don't have any readings that set this value, change it to zero to prevent over-reads */
-	    if (lowestTemp == 65535)
-		    lowestTemp = 0;
+	/* TODO: figure out how to get rid of both of these */
+	/* If we don't have any readings that set this value, change it to zero to prevent over-reads */
+	if (SPI_Message.lowestTemp == 65535)
+		SPI_Message.lowestTemp = 0;
 
-	    /* TODO: sum temp should always be more than 0 */
-	    if (sumTemp > 0)
-		    avgTemp = (uint16_t) (10 * (sumTemp / ((NUMTHERMISTORS) - errCounter)));
-	    else
-		    avgTemp = 0;
+	/* TODO: sum temp should always be more than 0 */
+	if (sumTemp > 0)
+		SPI_Message.avgTemp = (uint16_t) (10 * (sumTemp / ((NUMTHERMISTORS) - errCounter)));
+	else
+		SPI_Message.avgTemp = 0;
 
-
-	    txBuffer [0] = BMS_IDENTIFIER;
-	    txBuffer [1] = highestVoltage;
-	    txBuffer [2] = avgVoltage;
-	    txBuffer [3] = lowestVoltage;
-	    txBuffer [4] = highestTemp;
-	    txBuffer [5] = avgTemp;
-	    txBuffer [6] = lowestTemp;
-
-	    /* Send desired data over SPI */
-	    //HAL_SPI_Transmit(&hspi2, (uint8_t*)&txBuffer, 7, HAL_MAX_DELAY);
-    }
 }
 
 /**
@@ -289,7 +292,7 @@ static void MX_SPI2_Init(void)
     hspi2.Instance = SPI2;
     hspi2.Init.Mode = SPI_MODE_SLAVE;
     hspi2.Init.Direction = SPI_DIRECTION_2LINES;
-    hspi2.Init.DataSize = SPI_DATASIZE_16BIT;
+    hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
     hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
     hspi2.Init.CLKPhase = SPI_PHASE_2EDGE;
     hspi2.Init.NSS = SPI_NSS_HARD_INPUT;
@@ -343,31 +346,31 @@ static void MX_TIM14_Init(void) {
   * @retval None
   */
 static void MX_GPIO_Init(void) {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	__HAL_RCC_GPIOA_CLK_ENABLE();
 
-    /* Configure GPIO pin Output Level */
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+	/* Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
 
-    /* Configure GPIO pin Output Level */
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5, GPIO_PIN_RESET);
+	/* Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5, GPIO_PIN_RESET);
 
-    /* Configure GPIO pin : PC15 */
-    GPIO_InitStruct.Pin = GPIO_PIN_15;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+	/* Configure GPIO pin : PC15 */
+	GPIO_InitStruct.Pin = GPIO_PIN_15;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-    /* Configure GPIO pins : PA1 PA2 PA3 PA5 */
-    GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	/* Configure GPIO pins : PA1 PA2 PA3 PA5 */
+	GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
 /**

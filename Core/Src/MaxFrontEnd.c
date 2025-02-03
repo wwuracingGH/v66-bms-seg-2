@@ -10,6 +10,8 @@
 #include "MaxFrontEnd.h"
 #include "stdio.h"
 
+#define DISCHARGE_THREASHOLD 0.100f
+
 /*****************************************************************************************
  * Module private variables
  ****************************************************************************************/
@@ -28,6 +30,8 @@ static uint8_t *config = &maxTxBuffer[2];
 // Voltage Data
 static uint16_t sample_voltages[NUM_CELLS] = { 0 };
 static uint16_t sample_voltages_avg = 0;
+
+float cellVoltages[NUM_CELLS];
 
 /*
  * Private Function Prototypes
@@ -190,8 +194,10 @@ void MaxSampleCharges(void) {
 *****************************************************************************************/
 void MAXGetCellVoltages(float *cell_voltages) {
 	for(uint8_t i = 0; i < NUM_CELLS; i++) {
-		cell_voltages[i] = 2 * (3.3 * (sample_voltages[i])/4096);
+		cellVoltages[i] = 2 * (3.3 * (sample_voltages[i])/4096);
 	}
+
+	cell_voltages = cellVoltages;
 }
 
 /*****************************************************************************************
@@ -217,14 +223,6 @@ uint8_t selectCell(uint8_t cellNum) {
 	uint8_t bit2 = ((cellNum<<1) &0x04);
 	uint8_t bit3 = ((cellNum<<3) &0x08);
 	uint8_t selection = bit3|bit2|bit1|bit0;
-
-	/*
-	 * 7 = 0b0111
-	 * bit0 = 0b0000
-	 * bit1 = 0b0010
-	 * bit2 = 0b0100
-	 * bit3 = 0b1000
-	 * */
 	return selection<<3;
 }
 
@@ -242,4 +240,30 @@ void maxCalibrate(void) {
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
 	HAL_Delay(10);
 
+}
+
+/*
+ * Discharges as if the
+ * */
+void MaxDischargeToVoltage(uint16_t minVoltage){
+	float minVoltFloat = (float)minVoltage * 0.001f;
+
+	uint16_t * fetControl = maxTxBuffer;
+	for(int i = 0; i < NUM_CELLS; i++){
+		if(cellVoltages[i] >= minVoltFloat + DISCHARGE_THREASHOLD){
+			*fetControl |= (1 << (15 - i));
+		}
+
+		if(cellVoltages[i] <= minVoltFloat){
+			*fetControl &= ~(1 << (15 - i));
+		}
+	}
+}
+
+/*
+ * Stops all discharging
+ */
+void MaxStopDischarging(){
+	maxTxBuffer[0] = 0;
+	maxTxBuffer[1] = 0;
 }

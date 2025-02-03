@@ -4,6 +4,8 @@
  * 2022 Peter Schinske		-	V63
  * 2023 Brandon Ramirez		-	V64
  * 2023 Chandler Johnston	-	V64
+ * 2024 Melana Evans		-	V66
+ * 2024/5 Nicole Swierstra     	-       V66/V67 :)
  */
 
 #ifndef SRC_MAXAFE_H_
@@ -85,5 +87,15 @@ void MaxSampleCharges(void);
 *   description: Takes pointer to array and fills it with current cell voltage values
 *****************************************************************************************/
 void MAXGetCellVoltages(float *cell_voltages);
+
+/*
+ * Discharges as if the
+ * */
+void MaxDischargeToVoltage(uint16_t minVoltage);
+
+/*
+ * Stops all discharging
+ */
+void MaxStopDischarging();
 
 #endif /* SRC_MAXAFE_H_ */
