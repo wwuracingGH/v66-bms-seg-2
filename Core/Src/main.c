@@ -33,19 +33,18 @@
  * SPI data
  */
 struct _SPI_Message {
-	uint8_t boardID;
 	uint16_t highestVoltage;
 	uint16_t avgVoltage;
 	uint16_t lowestVoltage;
 	uint16_t highestTemp;
 	uint16_t avgTemp;
 	uint16_t lowestTemp;
-} SPI_Message = {BOARD_ID, 0,0,0,0,0,0};
+} SPI_Message = { 0,0,0,0,0,0};
 
 struct _SPI_Control {
-	uint8_t mode;
+	uint16_t mode;
 	uint16_t lowestVoltage;
-	uint8_t _RESERVED[sizeof(SPI_Message) - 3];
+	uint8_t _RESERVED[sizeof(SPI_Message) - 4];
 } SPI_Control = {0, 0, {0}};
 
 /*
@@ -71,7 +70,7 @@ static void MX_SPI2_Init(void);
 void Error_Handler(void);
 
 void readData();
-void communicateSPI();
+void transmitSPI();
 
 
 /**
@@ -108,8 +107,7 @@ int main(void)
 				MaxStopDischarging(); /*I don't care enough to do this just once*/
 			break;
 		}
-
-		HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&SPI_Message, (uint8_t *)&SPI_Control, sizeof(SPI_Message), 64);
+		//transmitSPI();
 	}
 }
 
@@ -167,6 +165,16 @@ void readData(){
 	else
 		SPI_Message.avgTemp = 0;
 
+}
+
+void transmitSPI(){
+	SPI2->CR1 &= ~SPI_CR1_SSI; /* Turn on internal spi chip select */
+	GPIOB->MODER |= (0b10 << 4); /* Turn on output for the MISO pin basically */
+
+	HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&SPI_Message, (uint8_t *)&SPI_Control, sizeof(SPI_Message), 1024);
+
+	GPIOB->MODER &= ~(0b11 << 4); /* Turn off output for the MISO pin*/
+	SPI2->CR1 |= SPI_CR1_SSI; /* Turn off internal spi chip select */
 }
 
 /**
@@ -295,7 +303,7 @@ static void MX_SPI2_Init(void)
     hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
     hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
     hspi2.Init.CLKPhase = SPI_PHASE_2EDGE;
-    hspi2.Init.NSS = SPI_NSS_HARD_INPUT;
+    hspi2.Init.NSS = SPI_NSS_SOFT;
     hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
     hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
     hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -340,6 +348,13 @@ static void MX_TIM14_Init(void) {
     }
 }
 
+void EXTI4_15_IRQHandler(){
+	if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_9)){
+		__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_9);
+		transmitSPI();
+	}
+}
+
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -371,6 +386,17 @@ static void MX_GPIO_Init(void) {
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+
+	/* Software Chip select */
+	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	/* EXTI interrupt init*/
+	HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 }
 
 /**
