@@ -194,10 +194,8 @@ void MaxSampleCharges(void) {
 *****************************************************************************************/
 void MAXGetCellVoltages(float *cell_voltages) {
 	for(uint8_t i = 0; i < NUM_CELLS; i++) {
-		cellVoltages[i] = 2 * (3.3 * (sample_voltages[i])/4096);
+		cell_voltages[i] = 2 * (3.3 * (sample_voltages[i])/4096);
 	}
-
-	cell_voltages = cellVoltages;
 }
 
 /*****************************************************************************************

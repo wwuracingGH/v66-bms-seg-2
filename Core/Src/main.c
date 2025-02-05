@@ -107,7 +107,6 @@ int main(void)
 				MaxStopDischarging(); /*I don't care enough to do this just once*/
 			break;
 		}
-		//transmitSPI();
 	}
 }
 
@@ -169,11 +168,11 @@ void readData(){
 
 void transmitSPI(){
 	SPI2->CR1 &= ~SPI_CR1_SSI; /* Turn on internal spi chip select */
-	GPIOB->MODER |= (0b10 << 4); /* Turn on output for the MISO pin basically */
+	GPIOB->OTYPER &= ~(1 << 2); /* Turn on output for the MISO pin basically */
 
 	HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&SPI_Message, (uint8_t *)&SPI_Control, sizeof(SPI_Message), 1024);
 
-	GPIOB->MODER &= ~(0b11 << 4); /* Turn off output for the MISO pin*/
+	GPIOB->OTYPER |= (1 << 2); /* Turn off output for the MISO pin*/
 	SPI2->CR1 |= SPI_CR1_SSI; /* Turn off internal spi chip select */
 }
 
