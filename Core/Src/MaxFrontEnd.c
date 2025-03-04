@@ -33,6 +33,8 @@ static uint16_t sample_voltages_avg = 0;
 
 float cellVoltages[NUM_CELLS];
 
+const float VOLT_MULTIPLIER = 3.3f / 4096.0f;
+
 /*
  * Private Function Prototypes
  */
@@ -194,7 +196,7 @@ void MaxSampleCharges(void) {
 *****************************************************************************************/
 void MAXGetCellVoltages(float *cell_voltages) {
 	for(uint8_t i = 0; i < NUM_CELLS; i++) {
-		cell_voltages[i] = 2 * (3.3 * (sample_voltages[i])/4096);
+		cell_voltages[i] = 2 * (VOLT_MULTIPLIER * (sample_voltages[i]));
 	}
 }
 

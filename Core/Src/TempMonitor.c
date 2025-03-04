@@ -23,7 +23,6 @@ static const int16_t tmCelciusADCVal[22] = { 4026, 3771, 3516, 3261, 3006, 2751,
 */
 static float thermVoltage = 0;
 static float thermResistance = 0;
-static float tempInC = 0;
 static float adcSampleAvg = 0;
 
 /*
@@ -116,18 +115,19 @@ void tmSelect(uint8_t index) {
 *   calibration
 *****************************************************************************************/
 float tmConvertToTemp(float adcVal) {
+	const float a = -3.90192f * 0.000000001f,
+				b = 0.0000238911f,
+				c = -0.0856408f,
+				d = 158.78595f; 
 
-	/* Convert thermistor reading to voltage */
-	thermVoltage = VDD * (adcVal / 4096);
+	float x = adcVal;
 
-	/* Calculate resistance of thermistor based off voltage divider*/
+	/* Very accurate approximation of the tempurature reading */
+	return a * (x*x*x) + b * (x*x) + c * (x) + d;
+
+	/* Log version */
+	/* thermVoltage = VDD * (adcVal / 4096); 
 	thermResistance = (thermVoltage * DIVIDER_RES)/(VDD - thermVoltage);
-
-	/* The following equation is a re-arranged exponential equation y = ab^x => ln(y/a)/ln(b)*/
-	/* a and b values in equation were determined through empirical testing and a regression of the data */
-	/* Calculate celsius temp based off thermistor resistance */
-	tempInC = logf(thermResistance/18970)/logf(0.9741);
-
-	return tempInC;
+	tempInC = logf(thermResistance/18970)/logf(0.9741); */
 }
 
