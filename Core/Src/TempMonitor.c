@@ -115,7 +115,7 @@ void tmSelect(uint8_t index) {
 *   calibration
 *****************************************************************************************/
 float tmConvertToTemp(float adcVal) {
-	const float a = -3.90192f * 0.000000001f,
+	const float a = -0.00000000390192f,
 				b = 0.0000238911f,
 				c = -0.0856408f,
 				d = 158.78595f; 
