@@ -23,8 +23,8 @@
 /* WARNING!:
  * Only enable this for segments that need it
  */
-#define NUM_IGNORED_CELLS 5
-#define IGNORED_CELLS_MASK 0b00000011111
+#define NUM_IGNORED_CELLS 0
+#define IGNORED_CELLS_MASK 0b00000000000
 
 
 /* TODO: this can be removed i am 200% sure */
