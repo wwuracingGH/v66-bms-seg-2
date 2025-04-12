@@ -19,6 +19,14 @@
 
 #define CELL_BALANCING 0
 
+
+/* WARNING!:
+ * Only enable this for segments that need it
+ */
+#define NUM_IGNORED_CELLS 5
+#define IGNORED_CELLS_MASK 0b00000011111
+
+
 /* TODO: this can be removed i am 200% sure */
 #define BOARD_ID 0
 
@@ -120,6 +128,7 @@ void readData(){
 	SPI_Message.highestVoltage = 0;
 	sumVoltage = 0;
 	for (int i = 0; i < NUM_CELLS; i++) {
+		if(NUM_IGNORED_CELLS > 0 && ((IGNORED_CELLS_MASK >> i) & 1)) continue;
 		uint16_t voltInt = (uint16_t)(1000 * cell_voltages[i]);
 		if (voltInt > SPI_Message.highestVoltage)
 			SPI_Message.highestVoltage = voltInt;
@@ -128,7 +137,7 @@ void readData(){
 		    
 		sumVoltage += cell_voltages[i];
 	}
-	SPI_Message.avgVoltage = (uint16_t) (1000 * (sumVoltage / NUM_CELLS));
+	SPI_Message.avgVoltage = (uint16_t) (1000 * (sumVoltage / ((NUM_CELLS) - (NUM_IGNORED_CELLS))));
 
 
 	TMSampleTemps();
