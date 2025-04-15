@@ -128,7 +128,9 @@ void readData(){
 	SPI_Message.highestVoltage = 0;
 	sumVoltage = 0;
 	for (int i = 0; i < NUM_CELLS; i++) {
-		if(NUM_IGNORED_CELLS > 0 && ((IGNORED_CELLS_MASK >> i) & 1)) continue;
+#if NUM_IGNORED_CELLS > 0
+		if(IGNORED_CELLS_MASK & (1UL << i)) continue;
+#endif
 		uint16_t voltInt = (uint16_t)(1000 * cell_voltages[i]);
 		if (voltInt > SPI_Message.highestVoltage)
 			SPI_Message.highestVoltage = voltInt;
